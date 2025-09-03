@@ -6,6 +6,9 @@ from werkzeug.utils import secure_filename
 from werkzeug.exceptions import RequestEntityTooLarge
 import uuid
 import mimetypes
+from PIL import Image
+import re
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -43,17 +46,49 @@ def is_image_file(file_path):
     mime_type, _ = mimetypes.guess_type(file_path)
     return mime_type and mime_type.startswith('image/')
 
+def seo_filename(keyword: str, ext: str) -> str:
+    """Generate SEO-friendly filename from keyword"""
+    # Convert keyword to file-safe format (latin characters, no spaces/symbols)
+    safe = re.sub(r"[^a-zA-Z0-9\-]", "-", keyword.strip().lower())
+    safe = re.sub(r"-+", "-", safe)  # Remove multiple consecutive dashes
+    safe = safe.strip("-")  # Remove leading/trailing dashes
+    timestamp = str(int(time.time()))
+    return f"{safe}-{timestamp}.{ext}"
+
+def optimize_image(input_path: str, output_path: str) -> bool:
+    """Optimize image for web delivery"""
+    try:
+        with Image.open(input_path) as img:
+            # Convert to RGB if necessary (removes alpha channel, handles CMYK, etc.)
+            if img.mode in ('RGBA', 'LA', 'P'):
+                # Create white background for transparency
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Save optimized version
+            img.save(output_path, 'JPEG', optimize=True, quality=85)
+            return True
+    except Exception as e:
+        logging.error(f"Error optimizing image: {e}")
+        return False
+
 @app.route('/')
 def index():
     """Display test form for development purposes"""
     return render_template('test_form.html')
 
+@app.route('/upload', methods=['POST'])
 @app.route('/submit', methods=['POST'])
 def handle_form_submission():
     """Handle form submissions from Tilda or other sources"""
     try:
-        # Get keyword from form data
-        keyword = request.form.get('keyword', '').strip()
+        # Get keyword from form data (support both 'keyword' and Tilda's 'text_1' field names)
+        keyword = request.form.get('keyword') or request.form.get('text_1', '').strip()
         
         if not keyword:
             return jsonify({
@@ -61,9 +96,9 @@ def handle_form_submission():
                 'error': 'Keyword is required'
             }), 400
         
-        # Handle file uploads
+        # Handle file uploads (support multiple field names including Tilda's 'file_1')
         uploaded_files = []
-        files = request.files.getlist('files') or request.files.getlist('file')
+        files = request.files.getlist('files') or request.files.getlist('file') or request.files.getlist('file_1')
         
         # Also check for single file upload with different field names
         if not files:
@@ -88,30 +123,41 @@ def handle_form_submission():
                         'error': f'Invalid file type: {file.filename}. Only image files are allowed.'
                     }), 400
                 
-                # Generate unique filename to prevent conflicts
+                # Generate SEO-friendly filename
                 original_filename = secure_filename(file.filename)
                 file_extension = original_filename.rsplit('.', 1)[1].lower()
-                unique_filename = f"{uuid.uuid4().hex}.{file_extension}"
+                seo_filename_result = seo_filename(keyword, file_extension)
                 
-                # Save file
-                file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-                file.save(file_path)
+                # Save temporary file first
+                temp_filename = f"temp_{uuid.uuid4().hex}.{file_extension}"
+                temp_path = os.path.join(app.config['UPLOAD_FOLDER'], temp_filename)
+                file.save(temp_path)
                 
                 # Verify it's actually an image
-                if not is_image_file(file_path):
-                    os.remove(file_path)  # Clean up invalid file
+                if not is_image_file(temp_path):
+                    os.remove(temp_path)  # Clean up invalid file
                     return jsonify({
                         'success': False,
                         'error': f'File {original_filename} is not a valid image'
                     }), 400
                 
+                # Optimize and save with SEO filename
+                final_path = os.path.join(app.config['UPLOAD_FOLDER'], seo_filename_result)
+                if optimize_image(temp_path, final_path):
+                    os.remove(temp_path)  # Clean up temp file
+                    final_filename = seo_filename_result
+                else:
+                    # If optimization fails, keep original
+                    os.rename(temp_path, final_path)
+                    final_filename = seo_filename_result
+                
                 uploaded_files.append({
                     'original_name': original_filename,
-                    'saved_name': unique_filename,
-                    'path': file_path
+                    'saved_name': final_filename,
+                    'path': final_path
                 })
                 
-                logging.info(f"Successfully saved file: {original_filename} as {unique_filename}")
+                logging.info(f"Successfully saved and optimized file: {original_filename} as {final_filename}")
         
         # Return success response
         response_data = {
