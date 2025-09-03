@@ -10,6 +10,10 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# CORS настройки для Tilda webhook
+from flask_cors import CORS
+CORS(app, origins=['*'], methods=['POST', 'GET', 'OPTIONS'])
+
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 ALLOWED_EXT = {"png", "jpg", "jpeg", "webp"}
@@ -59,6 +63,11 @@ def detect_keyword():
 def home():
     return "Tilda Image Server — OK"
 
+@app.route("/ping", methods=["GET", "POST"])
+def ping():
+    """Quick health check endpoint"""
+    return jsonify({"status": "ok", "server": "ready"}), 200
+
 
 @app.route("/debug", methods=["POST", "GET"])
 def debug():
@@ -104,6 +113,8 @@ def debug():
 @app.route("/upload", methods=["POST"])
 @app.route("/webhook", methods=["POST"])
 def submit():
+    start_time = time.time()
+    
     # Логируем входящий запрос
     logger.info(f"=== НОВЫЙ ЗАПРОС НА {request.endpoint} ===")
     logger.info(f"Form поля: {list(request.form.keys())}")
@@ -175,4 +186,8 @@ def submit():
             "hashtags": hashtags
         })
 
-    return jsonify({"success": True, "keyword": keyword, "results": results}), 200
+    end_time = time.time()
+    processing_time = end_time - start_time
+    logger.info(f"Обработка завершена за {processing_time:.3f} секунд")
+    
+    return jsonify({"success": True, "keyword": keyword, "results": results, "processing_time": f"{processing_time:.3f}s"}), 200

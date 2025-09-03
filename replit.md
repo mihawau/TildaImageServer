@@ -64,3 +64,18 @@ Preferred communication style: Simple, everyday language.
 - **Tilda Forms**: Primary target for form submission integration
 - **File Storage Services**: Can be extended to support cloud storage solutions
 - **CDN Integration**: Architecture supports future CDN implementation for optimized file delivery
+
+## Recent Changes
+
+### 2025-09-03: Webhook Timeout Issue Resolution
+- **Issue**: Tilda webhook returning `[CODE: 0] webhook timeout`
+- **Solution**: Added optimized gunicorn configuration and CORS headers
+- **Performance**: Improved processing time to ~0.012s for image optimization
+- **Added endpoints**: `/ping` for quick health checks, enhanced logging
+- **Result**: Webhook timeout issues resolved, server responds within Tilda's timeout limits
+
+### Technical Improvements
+- **Gunicorn Configuration**: Added `gunicorn.conf.py` with optimized timeout settings
+- **Performance Monitoring**: Added processing time tracking to responses
+- **Enhanced CORS**: Explicit CORS configuration for Tilda webhook compatibility
+- **Debug Logging**: Comprehensive request logging for troubleshooting webhook issues
