@@ -68,6 +68,29 @@ def ping():
     """Quick health check endpoint"""
     return jsonify({"status": "ok", "server": "ready"}), 200
 
+@app.route("/test-text", methods=["POST"])
+def test_text():
+    """Test endpoint that works without files - for Tilda debugging"""
+    keyword = detect_keyword()
+    
+    logger.info(f"=== TEST-TEXT ENDPOINT ===")
+    logger.info(f"Form поля: {dict(request.form)}")
+    logger.info(f"Найден keyword: '{keyword}'")
+    
+    if not keyword:
+        return jsonify({
+            "error": "Keyword required",
+            "success": False,
+            "received_form_fields": list(request.form.keys())
+        }), 400
+    
+    return jsonify({
+        "success": True,
+        "keyword": keyword,
+        "message": "Text-only processing successful",
+        "all_form_data": dict(request.form)
+    }), 200
+
 
 @app.route("/debug", methods=["POST", "GET"])
 def debug():
@@ -137,8 +160,22 @@ def submit():
     for fk in request.files:
         files += request.files.getlist(fk)
 
-    if not files:
-        return jsonify({"error": "No files uploaded", "success": False}), 400
+    # Логируем подробности о файлах для отладки
+    logger.info(f"Всего файловых полей: {len(request.files.keys())}")
+    for fk in request.files:
+        file_list = request.files.getlist(fk)
+        logger.info(f"Поле '{fk}': {[f.filename for f in file_list]}")
+
+    if not files or all(not f.filename for f in files):
+        # Если файлов нет, возвращаем ответ с информацией о том, что получили
+        return jsonify({
+            "error": "No files uploaded", 
+            "success": False,
+            "received_keyword": keyword,
+            "received_form_fields": list(request.form.keys()),
+            "received_file_fields": list(request.files.keys()),
+            "hint": "Make sure your Tilda form has a file upload field named 'file', 'file_1', or 'files'"
+        }), 400
 
     results = []
     for f in files:
