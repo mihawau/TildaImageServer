@@ -2,6 +2,11 @@
 from flask import Flask, request, jsonify
 import os, time, re
 from PIL import Image
+import logging
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -58,16 +63,39 @@ def home():
 @app.route("/debug", methods=["POST", "GET"])
 def debug():
     # Возвращаем, что именно пришло — для отладки Tilda ↔ Replit
+    logger.info("=== ВХОДЯЩИЙ ЗАПРОС ОТ TILDA ===")
+    logger.info(f"Метод: {request.method}")
+    logger.info(f"URL: {request.url}")
+    logger.info(f"Headers: {dict(request.headers)}")
+    
     try:
         form_preview = {k: (v[:200] + "..." if len(v) > 200 else v) for k, v in request.form.items()}
+        logger.info(f"Form данные: {form_preview}")
     except Exception:
         form_preview = {}
+    
+    json_data = request.get_json(silent=True)
+    if json_data:
+        logger.info(f"JSON данные: {json_data}")
+    
+    file_info = {}
+    for key in request.files:
+        files = request.files.getlist(key)
+        file_info[key] = [f.filename for f in files if f.filename]
+    
+    if file_info:
+        logger.info(f"Файлы: {file_info}")
+    
+    logger.info("=== КОНЕЦ ЗАПРОСА ===")
+    
     return jsonify({
         "method": request.method,
         "form_keys": list(request.form.keys()),
         "form_preview": form_preview,
         "file_keys": list(request.files.keys()),
-        "json_body": request.get_json(silent=True)
+        "json_body": json_data,
+        "success": True,
+        "message": "Данные получены! Смотрите Console в Replit для подробностей."
     })
 
 
@@ -76,8 +104,14 @@ def debug():
 @app.route("/upload", methods=["POST"])
 @app.route("/webhook", methods=["POST"])
 def submit():
+    # Логируем входящий запрос
+    logger.info(f"=== НОВЫЙ ЗАПРОС НА {request.endpoint} ===")
+    logger.info(f"Form поля: {list(request.form.keys())}")
+    logger.info(f"Файловые поля: {list(request.files.keys())}")
+    
     # детектируем ключевое слово
     keyword = detect_keyword()
+    logger.info(f"Найден keyword: '{keyword}'")
     if not keyword:
         return jsonify({
             "error": "Keyword is required or not found in form.",
