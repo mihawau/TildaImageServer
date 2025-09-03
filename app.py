@@ -184,6 +184,35 @@ def handle_form_submission():
             'error': 'Internal server error occurred while processing your request'
         }), 500
 
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Webhook endpoint for Tilda JSON submissions"""
+    try:
+        data = request.json  # Tilda sends JSON
+        if not data:
+            return jsonify({"error": "No data received", "success": False}), 400
+        
+        keyword = data.get("keyword")  # Key parameter
+        if not keyword:
+            return jsonify({"error": "Keyword is required", "success": False}), 400
+
+        # Here you can add your optimization/search logic
+        response = {
+            "success": True,
+            "message": f"Got keyword: {keyword}",
+            "keyword": keyword
+        }
+        
+        logging.info(f"Webhook processed successfully: keyword='{keyword}'")
+        return jsonify(response), 200
+        
+    except Exception as e:
+        logging.error(f"Error processing webhook: {str(e)}")
+        return jsonify({
+            "error": "Internal server error occurred while processing webhook",
+            "success": False
+        }), 500
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
