@@ -1,251 +1,144 @@
-import os
-import logging
-from flask import Flask, request, jsonify, render_template, flash, redirect, url_for
-from flask_cors import CORS
-from werkzeug.utils import secure_filename
-from werkzeug.exceptions import RequestEntityTooLarge
-import uuid
-import mimetypes
+# app.py — замените содержимое этим кодом
+from flask import Flask, request, jsonify
+import os, time, re
 from PIL import Image
-import re
-import time
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key-change-in-production")
 
-# Enable CORS for all routes to support Tilda form submissions
-CORS(app)
-
-# Configuration
-UPLOAD_FOLDER = 'uploads'
-MAX_FILE_SIZE = 16 * 1024 * 1024  # 16MB max file size
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'}
-
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
-
-# Ensure upload directory exists
+UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+ALLOWED_EXT = {"png", "jpg", "jpeg", "webp"}
 
-def allowed_file(filename):
-    """Check if file has an allowed extension and is actually an image"""
-    if not filename:
-        return False
-    
-    # Check extension
-    has_allowed_ext = '.' in filename and \
-                     filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-    
-    return has_allowed_ext
 
-def is_image_file(file_path):
-    """Verify that the file is actually an image by checking MIME type"""
-    mime_type, _ = mimetypes.guess_type(file_path)
-    return mime_type and mime_type.startswith('image/')
+def allowed(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXT
 
-def seo_filename(keyword: str, ext: str) -> str:
-    """Generate SEO-friendly filename from keyword"""
-    # Convert keyword to file-safe format (latin characters, no spaces/symbols)
-    safe = re.sub(r"[^a-zA-Z0-9\-]", "-", keyword.strip().lower())
-    safe = re.sub(r"-+", "-", safe)  # Remove multiple consecutive dashes
-    safe = safe.strip("-")  # Remove leading/trailing dashes
-    timestamp = str(int(time.time()))
-    return f"{safe}-{timestamp}.{ext}"
 
-def optimize_image(input_path: str, output_path: str) -> bool:
-    """Optimize image for web delivery"""
+def seo_filename(keyword, orig_filename):
+    ext = orig_filename.rsplit(".", 1)[1].lower() if "." in orig_filename else "jpg"
+    safe = re.sub(r"[^a-z0-9\-]+", "-", (keyword or "image").strip().lower())
+    safe = re.sub(r"-+", "-", safe).strip("-")
+    ts = int(time.time())
+    return f"{safe}-{ts}.{ext}"
+
+
+def optimise_image(in_path, out_path):
     try:
-        with Image.open(input_path) as img:
-            # Convert to RGB if necessary (removes alpha channel, handles CMYK, etc.)
-            if img.mode in ('RGBA', 'LA', 'P'):
-                # Create white background for transparency
-                background = Image.new('RGB', img.size, (255, 255, 255))
-                if img.mode == 'P':
-                    img = img.convert('RGBA')
-                background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
-                img = background
-            elif img.mode != 'RGB':
-                img = img.convert('RGB')
-            
-            # Save optimized version
-            img.save(output_path, 'JPEG', optimize=True, quality=85)
-            return True
-    except Exception as e:
-        logging.error(f"Error optimizing image: {e}")
-        return False
+        img = Image.open(in_path).convert("RGB")
+        img.save(out_path, optimize=True, quality=80)
+    except Exception:
+        # если PIL не смог — просто перемещаем файл
+        os.replace(in_path, out_path)
 
-@app.route('/')
-def index():
-    """Display test form for development purposes"""
-    return render_template('test_form.html')
 
-@app.route('/upload', methods=['POST'])
-@app.route('/submit', methods=['POST'])
-def handle_form_submission():
-    """Handle form submissions from Tilda or other sources"""
+def detect_keyword():
+    # первые варианты, которые часто используют
+    priority = ("keyword", "text_1", "text", "q", "query", "title", "name")
+    for name in priority:
+        v = request.form.get(name)
+        if v and v.strip():
+            return v.strip()
+    # fallback: любое непустое поле формы
+    for k, v in request.form.items():
+        if v and v.strip():
+            return v.strip()
+    # fallback 2: берём имя первого файла без расширения
+    for fkey in request.files:
+        f = request.files.get(fkey)
+        if f and f.filename:
+            return os.path.splitext(f.filename)[0]
+    return None
+
+
+@app.route("/", methods=["GET"])
+def home():
+    return "Tilda Image Server — OK"
+
+
+@app.route("/debug", methods=["POST", "GET"])
+def debug():
+    # Возвращаем, что именно пришло — для отладки Tilda ↔ Replit
     try:
-        # Get keyword from form data (support both 'keyword' and Tilda's 'text_1' field names)
-        keyword = request.form.get('keyword') or request.form.get('text_1', '').strip()
-        
-        if not keyword:
-            return jsonify({
-                'success': False,
-                'error': 'Keyword is required'
-            }), 400
-        
-        # Handle file uploads (support multiple field names including Tilda's 'file_1')
-        uploaded_files = []
-        files = request.files.getlist('files') or request.files.getlist('file') or request.files.getlist('file_1')
-        
-        # Also check for single file upload with different field names
-        if not files:
-            for field_name in request.files:
-                file = request.files[field_name]
-                if file and file.filename:
-                    files = [file]
-                    break
-        
-        if not files or all(not file.filename for file in files):
-            return jsonify({
-                'success': False,
-                'error': 'At least one file is required'
-            }), 400
-        
-        for file in files:
-            if file and file.filename:
-                # Validate file type
-                if not allowed_file(file.filename):
-                    return jsonify({
-                        'success': False,
-                        'error': f'Invalid file type: {file.filename}. Only image files are allowed.'
-                    }), 400
-                
-                # Generate SEO-friendly filename
-                original_filename = secure_filename(file.filename)
-                file_extension = original_filename.rsplit('.', 1)[1].lower()
-                seo_filename_result = seo_filename(keyword, file_extension)
-                
-                # Save temporary file first
-                temp_filename = f"temp_{uuid.uuid4().hex}.{file_extension}"
-                temp_path = os.path.join(app.config['UPLOAD_FOLDER'], temp_filename)
-                file.save(temp_path)
-                
-                # Verify it's actually an image
-                if not is_image_file(temp_path):
-                    os.remove(temp_path)  # Clean up invalid file
-                    return jsonify({
-                        'success': False,
-                        'error': f'File {original_filename} is not a valid image'
-                    }), 400
-                
-                # Optimize and save with SEO filename
-                final_path = os.path.join(app.config['UPLOAD_FOLDER'], seo_filename_result)
-                if optimize_image(temp_path, final_path):
-                    os.remove(temp_path)  # Clean up temp file
-                    final_filename = seo_filename_result
-                else:
-                    # If optimization fails, keep original
-                    os.rename(temp_path, final_path)
-                    final_filename = seo_filename_result
-                
-                uploaded_files.append({
-                    'original_name': original_filename,
-                    'saved_name': final_filename,
-                    'path': final_path
-                })
-                
-                logging.info(f"Successfully saved and optimized file: {original_filename} as {final_filename}")
-        
-        # Return success response
-        response_data = {
-            'success': True,
-            'keyword': keyword,
-            'files': uploaded_files,
-            'message': f'Successfully processed {len(uploaded_files)} file(s)'
-        }
-        
-        logging.info(f"Form submission processed successfully: keyword='{keyword}', files={len(uploaded_files)}")
-        
-        return jsonify(response_data), 200
-        
-    except RequestEntityTooLarge:
+        form_preview = {k: (v[:200] + "..." if len(v) > 200 else v) for k, v in request.form.items()}
+    except Exception:
+        form_preview = {}
+    return jsonify({
+        "method": request.method,
+        "form_keys": list(request.form.keys()),
+        "form_preview": form_preview,
+        "file_keys": list(request.files.keys()),
+        "json_body": request.get_json(silent=True)
+    })
+
+
+# Поддерживаем несколько эндпоинтов, чтобы не было путаницы
+@app.route("/submit", methods=["POST"])
+@app.route("/upload", methods=["POST"])
+@app.route("/webhook", methods=["POST"])
+def submit():
+    # детектируем ключевое слово
+    keyword = detect_keyword()
+    if not keyword:
         return jsonify({
-            'success': False,
-            'error': f'File too large. Maximum size allowed is {MAX_FILE_SIZE // (1024*1024)}MB'
-        }), 413
-        
-    except Exception as e:
-        logging.error(f"Error processing form submission: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': 'Internal server error occurred while processing your request'
-        }), 500
+            "error": "Keyword is required or not found in form.",
+            "success": False,
+            "received_form_keys": list(request.form.keys()),
+            "received_file_keys": list(request.files.keys()),
+            "hint": "Make sure Tilda field name for the text is 'keyword' or 'text_1', or use /debug to see what Tilda sends."
+        }), 400
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    """Webhook endpoint for Tilda JSON submissions"""
-    try:
-        data = request.json  # Tilda sends JSON
-        if not data:
-            return jsonify({"error": "No data received", "success": False}), 400
-        
-        keyword = data.get("keyword")  # Key parameter
-        if not keyword:
-            return jsonify({"error": "Keyword is required", "success": False}), 400
+    # собираем все файлы из всех файловых полей
+    files = []
+    for fk in request.files:
+        files += request.files.getlist(fk)
 
-        # Here you can add your optimization/search logic
-        response = {
-            "success": True,
-            "message": f"Got keyword: {keyword}",
-            "keyword": keyword
-        }
-        
-        logging.info(f"Webhook processed successfully: keyword='{keyword}'")
-        return jsonify(response), 200
-        
-    except Exception as e:
-        logging.error(f"Error processing webhook: {str(e)}")
-        return jsonify({
-            "error": "Internal server error occurred while processing webhook",
-            "success": False
-        }), 500
+    if not files:
+        return jsonify({"error": "No files uploaded", "success": False}), 400
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'upload_folder': app.config['UPLOAD_FOLDER'],
-        'max_file_size': f"{MAX_FILE_SIZE // (1024*1024)}MB",
-        'allowed_extensions': list(ALLOWED_EXTENSIONS)
-    }), 200
+    results = []
+    for f in files:
+        orig = f.filename or "file"
+        if orig == "":
+            continue
+        if not allowed(orig):
+            return jsonify({"error": f"Bad file type: {orig}", "success": False}), 400
 
-@app.errorhandler(413)
-def too_large(e):
-    """Handle file too large error"""
-    return jsonify({
-        'success': False,
-        'error': f'File too large. Maximum size allowed is {MAX_FILE_SIZE // (1024*1024)}MB'
-    }), 413
+        tmp_name = f"tmp_{int(time.time()*1000)}_{orig}"
+        tmp_path = os.path.join(UPLOAD_FOLDER, tmp_name)
+        f.save(tmp_path)
 
-@app.errorhandler(404)
-def not_found(e):
-    """Handle 404 errors"""
-    return jsonify({
-        'success': False,
-        'error': 'Endpoint not found'
-    }), 404
+        newname = seo_filename(keyword, orig)
+        out_path = os.path.join(UPLOAD_FOLDER, newname)
 
-@app.errorhandler(405)
-def method_not_allowed(e):
-    """Handle method not allowed errors"""
-    return jsonify({
-        'success': False,
-        'error': 'Method not allowed for this endpoint'
-    }), 405
+        try:
+            optimise_image(tmp_path, out_path)
+        except Exception as e:
+            # в крайнем случае — переместим файл без обработки
+            try:
+                os.replace(tmp_path, out_path)
+            except Exception:
+                pass
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+        # простая генерация метаданных (можно расширить)
+        base = (keyword or "Image").strip().capitalize()
+        title = f"{base} | Optimised Photo"
+        description = f"Optimised image about {keyword} for web and social."
+        alt = f"{base} - SEO optimised image"
+        hashtags = " ".join([f"#{t}" for t in re.sub(r'[^a-z0-9 ]', '', keyword.lower()).split()][:5])
+
+        results.append({
+            "original": orig,
+            "saved": newname,
+            "title": title,
+            "description": description,
+            "alt": alt,
+            "hashtags": hashtags
+        })
+
+    return jsonify({"success": True, "keyword": keyword, "results": results}), 200
