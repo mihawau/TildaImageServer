@@ -1,0 +1,77 @@
+/* Custom styles for the Tilda form test page */
+
+body {
+    background: linear-gradient(135deg, var(--bs-dark) 0%, var(--bs-secondary) 100%);
+    min-height: 100vh;
+}
+
+.card {
+    border: none;
+    backdrop-filter: blur(10px);
+    background: rgba(var(--bs-dark-rgb), 0.8);
+}
+
+.card-header {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.form-control:focus {
+    border-color: var(--bs-primary);
+    box-shadow: 0 0 0 0.2rem rgba(var(--bs-primary-rgb), 0.25);
+}
+
+pre {
+    font-size: 0.875rem;
+    line-height: 1.5;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+code {
+    color: var(--bs-info);
+}
+
+.btn-primary {
+    background: linear-gradient(45deg, var(--bs-primary), var(--bs-info));
+    border: none;
+    transition: transform 0.2s ease;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(45deg, var(--bs-info), var(--bs-primary));
+}
+
+.form-text {
+    color: var(--bs-secondary);
+}
+
+/* Loading animation */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.fa-spinner {
+    animation: spin 1s linear infinite;
+}
+
+/* File input styling */
+.form-control[type="file"] {
+    padding: 0.5rem;
+}
+
+.form-control[type="file"]::-webkit-file-upload-button {
+    background: var(--bs-secondary);
+    color: var(--bs-light);
+    border: none;
+    padding: 0.375rem 0.75rem;
+    margin-right: 0.75rem;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: background-color 0.15s ease-in-out;
+}
+
+.form-control[type="file"]::-webkit-file-upload-button:hover {
+    background: var(--bs-secondary-dark);
+}

@@ -1,0 +1,83 @@
+from flask import Flask, request, jsonify
+import os
+from PIL import Image
+import re
+import time
+
+app = Flask(__name__)
+
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Разрешённые типы файлов
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
+
+
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def seo_filename(keyword: str, ext: str) -> str:
+    # Переводим keyword в формат для имени файла (латиница, без пробелов/символов)
+    safe = re.sub(r"[^a-zA-Z0-9\-]", "-", keyword.strip().lower())
+    safe = re.sub(r"-+", "-", safe)
+    timestamp = str(int(time.time()))
+    return f"{safe}-{timestamp}.{ext}"
+
+
+def optimise_image(input_path: str, output_path: str):
+    try:
+        img = Image.open(input_path)
+        img = img.convert("RGB")  # нормализуем
+        img.save(output_path, optimize=True, quality=80)  # сжатие
+        return True
+    except Exception as e:
+        print("Ошибка оптимизации:", e)
+        return False
+
+
+@app.route("/upload", methods=["POST"])
+def upload():
+    try:
+        keyword = request.form.get("text_1", "untitled")  # поле из Tilda
+        files = request.files.getlist("file_1")
+
+        if not files or files[0].filename == "":
+            return jsonify({"status": "error", "message": "Файл не загружен"}), 400
+
+        saved_files = []
+        for f in files:
+            if f and allowed_file(f.filename):
+                ext = f.filename.rsplit(".", 1)[1].lower()
+                new_name = seo_filename(keyword, ext)
+                filepath = os.path.join(UPLOAD_FOLDER, new_name)
+
+                # Сохраняем временный файл
+                temp_path = os.path.join(UPLOAD_FOLDER, "temp_" + f.filename)
+                f.save(temp_path)
+
+                # Оптимизируем и сохраняем под новым именем
+                if optimise_image(temp_path, filepath):
+                    saved_files.append(new_name)
+                os.remove(temp_path)
+            else:
+                return jsonify({"status": "error", "message": f"Недопустимый формат файла: {f.filename}"}), 400
+
+        return jsonify({
+            "status": "ok",
+            "keyword": keyword,
+            "files_received": saved_files,
+            "message": "Файлы успешно загружены и оптимизированы"
+        })
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/", methods=["GET"])
+def home():
+    return "✅ Flask сервер для Tilda работает!"
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)
