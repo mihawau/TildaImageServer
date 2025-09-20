@@ -1,0 +1,144 @@
+Functional Requirements
+
+1. Image Search (Pexels API)
+
+• Endpoint: /search?keyword=<term>
+
+• Functionality:
+
+• Accept a keyword as a query parameter.
+
+• Fetch up to 7 images from the Pexels API.
+
+• Return results in JSON format, including medium-sized image URLs.
+
+• Example response:
+
+{
+  "images": [
+    {
+      "url": "https://example.com/image1.jpg",
+      "photographer": "John Doe",
+      "source": "Pexels"
+    },
+    ...
+  ]
+}
+
+2. Image Optimization
+
+• Endpoint: /optimize
+
+• Method: POST
+
+• Functionality:
+
+• Accept one or more image files via a form or API request.
+
+• Compress the images without losing quality.
+
+• Allow adding metadata (title, description, keywords).
+
+• Return the optimized images with updated metadata.
+
+• Example request:
+
+{
+  "file": "<binary>",
+  "metadata": {
+    "title": "Example Title",
+    "description": "Example Description",
+    "keywords": "example, image, optimization"
+  }
+}
+
+• Example response:
+
+{
+  "optimized_image_url": "https://example.com/optimized_image.jpg"
+}
+
+Non-Functional Requirements
+
+1. Performance:
+
+• Handle up to 50 requests per minute.
+
+• Response time: less than 5 seconds for each request.
+
+2. File Size:
+
+• Limit uploaded file size to 10 MB.
+
+3. Error Handling:
+
+• Handle invalid API keys for Pexels.
+
+• Validate uploaded files (e.g., MIME type, size).
+
+4. Integration:
+
+• Connect with Tilda forms using JavaScript for seamless interaction.
+
+
+Architecture
+
+1. Backend: Python + Flask.
+
+2. Libraries:
+
+• requests for API calls.
+
+• Pillow or tinify for image optimization.
+
+3. Deployment:
+
+• Current: Replit.
+
+• Future options: Heroku, AWS, or other cloud platforms.
+
+4. Endpoints:
+
+• /: Main page with project description.
+
+• /search: Performs image search.
+
+• /optimize: Handles image upload and optimization.
+
+
+Steps for Development
+
+1. Set Up:
+
+• Install dependencies using pip install -r requirements.txt.
+
+• Configure Pexels API key in the environment variables.
+
+2. Develop Image Search:
+
+• Implement /search endpoint to fetch and return image data from Pexels.
+
+3. Develop Image Optimization:
+
+• Implement /optimize endpoint to handle uploads, compress images, and add metadata.
+
+4. Test:
+
+• Test both endpoints via browser, Postman, or curl.
+
+5. Integrate with Tilda:
+
+• Add HTML forms and JavaScript to connect Tilda with Flask endpoints.
+
+6. Deploy:
+
+• Ensure stable deployment on Replit.
+
+
+Deliverables
+
+• Functional Flask app with /search and /optimize endpoints.
+
+• Integration-ready backend for Tilda forms.
+
+• Documentation for API usage.
